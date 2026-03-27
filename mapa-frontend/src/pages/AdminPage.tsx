@@ -27,8 +27,8 @@ export function AdminPage() {
       const { data, error: err } = await supabase.from('empresas').select('*');
       if (err) throw err;
       setEmpresas(data || []);
-    } catch (err: any) {
-      setError(err.message ?? 'Erro ao carregar empresas.');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erro ao carregar empresas.');
     } finally {
       setLoading(false);
     }
@@ -47,8 +47,8 @@ export function AdminPage() {
       setCnpj('');
       setShowForm(false);
       carregarEmpresas();
-    } catch (err: any) {
-      setFormError(err.message ?? 'Erro ao criar empresa.');
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'Erro ao criar empresa.');
     } finally {
       setSaving(false);
     }

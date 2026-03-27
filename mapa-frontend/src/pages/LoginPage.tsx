@@ -27,12 +27,16 @@ export function LoginPage() {
       if (!email || !senha) {
         throw new Error('Preencha todos os campos.');
       }
+      console.log('Tentando login com:', email);
       await login(email, senha);
-      // Navigation will happen via useEffect when user state updates
-    } catch (err: any) {
-      setError(err.message === 'Invalid login credentials'
+      console.log('Login OK, aguardando redirect...');
+    } catch (err: unknown) {
+      console.error('Erro no login:', err);
+      const msg = err instanceof Error ? err.message : 'Erro ao conectar ao servidor.';
+      setError(msg === 'Invalid login credentials'
         ? 'E-mail ou senha incorretos.'
-        : err.message ?? 'Erro ao conectar ao servidor.');
+        : msg);
+    } finally {
       setLoading(false);
     }
   };

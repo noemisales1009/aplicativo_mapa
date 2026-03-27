@@ -16,7 +16,7 @@ import { NewClientPage } from './pages/NewClientPage';
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="light" storageKey="mapa-theme">
+    <ThemeProvider defaultTheme="light" storageKey="mapa-ui-theme">
       <AuthProvider>
         <BrowserRouter>
         <Routes>

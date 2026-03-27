@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Sidebar } from '../components/Sidebar';
 import { supabase } from '../lib/supabase';
+import { useEmpresaFilter } from '../lib/useEmpresaFilter';
+import { useAuth } from '../context/AuthContext';
+import { generatePGR } from '../lib/generatePGR';
 
 interface PgrRow {
+  empresa_id: string;
   qtd_funcionarios: number;
   grupo_homogeneo: string;
   descricao_perigo: string;
@@ -17,145 +21,242 @@ interface PgrRow {
   cor_hex: string;
 }
 
-const RISK_ORDER = ['Intolerável', 'Significativo', 'Moderado', 'Tolerável', 'Baixo'];
+interface SetorCard {
+  nome: string;
+  scoreMax: number;
+  riskLevel: 'high' | 'moderate' | 'low';
+  riskLabel: string;
+  barPercent: number;
+  recomendacoes: { titulo: string; descricao: string }[];
+}
 
 export function DashboardPage() {
   const [dados, setDados] = useState<PgrRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtroSetor, setFiltroSetor] = useState('');
-  const [filtroRisco, setFiltroRisco] = useState('');
+  const { empresaId, shouldFilter } = useEmpresaFilter();
+  const { user } = useAuth();
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase.from('vw_pgr_completo').select('*');
+      let query = supabase.from('vw_pgr_completo').select('*');
+
+      // Gestor: filtra por empresa_id. Admin: vê tudo.
+      if (shouldFilter && empresaId) {
+        query = query.eq('empresa_id', empresaId);
+      }
+
+      const { data } = await query;
       if (data) setDados(data);
       setLoading(false);
     }
     load();
-  }, []);
+  }, [empresaId, shouldFilter]);
 
-  const setores = [...new Set(dados.map(d => d.grupo_homogeneo))].sort();
-  const filtered = dados
-    .filter(d => !filtroSetor || d.grupo_homogeneo === filtroSetor)
-    .filter(d => !filtroRisco || d.classificacao_risco === filtroRisco)
-    .sort((a, b) => b.grau_risco - a.grau_risco);
+  // Agrupar dados por setor e montar cards
+  const setorMap = new Map<string, PgrRow[]>();
+  dados.forEach(d => {
+    const rows = setorMap.get(d.grupo_homogeneo) || [];
+    rows.push(d);
+    setorMap.set(d.grupo_homogeneo, rows);
+  });
 
-  const riskCounts = {
-    Intolerável: filtered.filter(d => d.classificacao_risco === 'Intolerável').length,
-    Significativo: filtered.filter(d => d.classificacao_risco === 'Significativo').length,
-    Moderado: filtered.filter(d => d.classificacao_risco === 'Moderado').length,
-    Tolerável: filtered.filter(d => d.classificacao_risco === 'Tolerável').length,
-    Baixo: filtered.filter(d => d.classificacao_risco === 'Baixo').length,
+  const cards: SetorCard[] = Array.from(setorMap.entries()).map(([nome, rows]) => {
+    const maxGrau = Math.max(...rows.map(r => r.grau_risco));
+    const avgScore = rows.reduce((a, r) => a + r.score_medio, 0) / rows.length;
+    const scoreDisplay = (avgScore / 25).toFixed(2); // Converter 0-100 para escala ~0-4
+
+    let riskLevel: 'high' | 'moderate' | 'low';
+    let riskLabel: string;
+    if (maxGrau >= 16) {
+      riskLevel = 'high';
+      riskLabel = `Risco Alto (${scoreDisplay})`;
+    } else if (maxGrau >= 8) {
+      riskLevel = 'moderate';
+      riskLabel = `Moderado (${scoreDisplay})`;
+    } else {
+      riskLevel = 'low';
+      riskLabel = `Baixo (${scoreDisplay})`;
+    }
+
+    // Top 2 recomendações do setor (maiores grau_risco)
+    const topRows = [...rows].sort((a, b) => b.grau_risco - a.grau_risco).slice(0, 2);
+    const recomendacoes = topRows.map(r => ({
+      titulo: r.descricao_perigo,
+      descricao: r.medidas_controle,
+    }));
+
+    return {
+      nome,
+      scoreMax: maxGrau,
+      riskLevel,
+      riskLabel,
+      barPercent: Math.min(Math.round(avgScore), 100),
+      recomendacoes,
+    };
+  });
+
+  // Ordenar: alto > moderado > baixo
+  const riskOrder = { high: 0, moderate: 1, low: 2 };
+  cards.sort((a, b) => riskOrder[a.riskLevel] - riskOrder[b.riskLevel] || b.scoreMax - a.scoreMax);
+
+  const totalSetores = cards.length;
+  const mediaCopsoq = dados.length > 0
+    ? (dados.reduce((a, r) => a + r.score_medio, 0) / dados.length / 25).toFixed(2)
+    : '0.00';
+  const riscosCriticos = cards.filter(c => c.riskLevel === 'high').length;
+  const totalColab = [...new Set(dados.map(d => d.grupo_homogeneo))].reduce((acc, setor) => {
+    const row = dados.find(d => d.grupo_homogeneo === setor);
+    return acc + (row?.qtd_funcionarios || 0);
+  }, 0);
+
+  const mediaCopsoqNum = parseFloat(mediaCopsoq);
+  const mediaLabel = mediaCopsoqNum >= 3.5 ? 'Alto' : mediaCopsoqNum >= 2.5 ? 'Moderado' : 'Baixo';
+  const mediaColor = mediaCopsoqNum >= 3.5 ? 'text-red-500' : mediaCopsoqNum >= 2.5 ? 'text-amber-500' : 'text-green-500';
+  const mediaBg = mediaCopsoqNum >= 3.5 ? 'bg-red-100 text-red-700' : mediaCopsoqNum >= 2.5 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700';
+
+  const riskColors = {
+    high: { border: 'border-l-red-500', badge: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400', bar: 'bg-red-500', icon: 'text-red-500' },
+    moderate: { border: 'border-l-amber-500', badge: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400', bar: 'bg-amber-500', icon: 'text-yellow-500' },
+    low: { border: 'border-l-green-500', badge: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400', bar: 'bg-green-500', icon: 'text-green-500' },
   };
 
   return (
-    <div className="flex min-h-screen" style={{ backgroundColor: '#F8FAFA' }}>
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Sidebar />
 
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-16 bg-white border-b border-slate-200 px-8 flex items-center justify-between shrink-0">
-          <h1 className="text-xl font-bold text-slate-900">Painel de Priorização PGR</h1>
-          <div className="flex items-center gap-3">
-            <select
-              value={filtroSetor}
-              onChange={e => setFiltroSetor(e.target.value)}
-              className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-700"
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
+        {/* Header */}
+        <header className="h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-8 flex items-center justify-between shrink-0">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-white">Painel Executivo de Priorização</h1>
+          <div className="flex items-center gap-4">
+            {riscosCriticos > 0 && (
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-800 dark:bg-slate-800 rounded-full text-xs font-medium text-slate-300">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                {riscosCriticos} Áreas Críticas que requerem atenção imediata
+              </div>
+            )}
+            <button
+              onClick={() => generatePGR(dados, user?.empresa_nome || null)}
+              className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded font-semibold text-sm flex items-center gap-2 transition-all"
             >
-              <option value="">Todos os Setores</option>
-              {setores.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select
-              value={filtroRisco}
-              onChange={e => setFiltroRisco(e.target.value)}
-              className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-700"
-            >
-              <option value="">Todos os Riscos</option>
-              {RISK_ORDER.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+              Gerar Relatório PGR
+            </button>
           </div>
         </header>
 
         <div className="flex-1 p-8 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center h-64">
-              <div className="w-8 h-8 border-4 border-slate-200 rounded-full animate-spin" style={{ borderTopColor: '#009B9B' }}></div>
+              <div className="w-8 h-8 border-4 border-slate-200 rounded-full animate-spin" style={{ borderTopColor: '#3b82f6' }}></div>
             </div>
           ) : (
             <>
-              {/* Summary */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-                {RISK_ORDER.map(risk => {
-                  const count = riskCounts[risk as keyof typeof riskCounts];
-                  const colors: Record<string, string> = {
-                    Intolerável: '#991b1b', Significativo: '#ef4444', Moderado: '#f97316', Tolerável: '#eab308', Baixo: '#22c55e'
-                  };
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total de Setores</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-slate-900 dark:text-white">{totalSetores}</span>
+                    <span className="text-xs text-slate-500">Mapeados</span>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Média COPSOQ II</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-2xl font-bold ${mediaColor}`}>{mediaCopsoq}</span>
+                    <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${mediaBg}`}>{mediaLabel}</span>
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm ring-2 ring-red-500/10">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Riscos Críticos</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-red-500">{String(riscosCriticos).padStart(2, '0')}</span>
+                    {riscosCriticos > 0 && <span className="text-xs font-semibold text-red-500">Urgente</span>}
+                  </div>
+                </div>
+
+                <div className="bg-white dark:bg-slate-900 p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Adesão Geral</p>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-slate-900 dark:text-white">{totalColab}</span>
+                    <span className="text-xs text-green-500 font-medium">Colab.</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section Header */}
+              <div className="mb-6 flex items-center justify-between">
+                <h2 className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                  <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+                  Cartões de Risco por Setor
+                </h2>
+                <div className="flex gap-4 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500"></span> Alto</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500"></span> Moderado</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500"></span> Baixo</span>
+                </div>
+              </div>
+
+              {/* Risk Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {cards.map((card) => {
+                  const colors = riskColors[card.riskLevel];
                   return (
                     <div
-                      key={risk}
-                      onClick={() => setFiltroRisco(filtroRisco === risk ? '' : risk)}
-                      className={`bg-white p-4 rounded-xl border-2 cursor-pointer transition-all ${filtroRisco === risk ? 'shadow-lg scale-105' : 'border-slate-200 hover:border-slate-300'}`}
-                      style={filtroRisco === risk ? { borderColor: colors[risk] } : {}}
+                      key={card.nome}
+                      className={`bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden border-l-4 ${colors.border} flex flex-col ${card.riskLevel === 'low' ? 'opacity-80 hover:opacity-100 transition-opacity' : ''}`}
                     >
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{risk}</p>
-                      <p className="text-2xl font-black mt-1" style={{ color: colors[risk] }}>{count}</p>
+                      {/* Card Header */}
+                      <div className="p-5 border-b border-slate-100 dark:border-slate-800">
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="font-bold text-slate-800 dark:text-white truncate pr-4">{card.nome}</h3>
+                          <span className={`shrink-0 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tight ${colors.badge}`}>
+                            {card.riskLabel}
+                          </span>
+                        </div>
+                        <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full">
+                          <div className={`h-full ${colors.bar} rounded-full`} style={{ width: `${card.barPercent}%` }}></div>
+                        </div>
+                      </div>
+
+                      {/* Recommendations */}
+                      <div className="p-5 flex-1 bg-slate-50/50 dark:bg-slate-900/50">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-3">
+                          {card.riskLevel === 'low' ? 'Recomendações' : 'Recomendações Urgentes'}
+                        </p>
+                        <div className="space-y-3">
+                          {card.recomendacoes.map((rec, i) => (
+                            <div key={i} className="flex gap-3">
+                              {card.riskLevel === 'high' ? (
+                                <svg className="w-5 h-5 shrink-0 text-red-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
+                              ) : card.riskLevel === 'moderate' ? (
+                                <svg className="w-5 h-5 shrink-0 text-yellow-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              ) : (
+                                <svg className="w-5 h-5 shrink-0 text-green-500 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-slate-800 dark:text-slate-200">{rec.titulo}</p>
+                                <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2">{rec.descricao}</p>
+                              </div>
+                            </div>
+                          ))}
+                          {card.recomendacoes.length === 0 && (
+                            <p className="text-xs text-slate-400 italic">Sem recomendações pendentes</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
-              </div>
 
-              {/* Table */}
-              <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                  <h3 className="font-bold text-slate-800">
-                    {filtered.length} registros {filtroSetor && `• ${filtroSetor}`} {filtroRisco && `• ${filtroRisco}`}
-                  </h3>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-[10px] text-slate-500 uppercase font-bold tracking-widest">
-                      <tr>
-                        <th className="px-6 py-3">Setor</th>
-                        <th className="px-6 py-3">Categoria COPSOQ</th>
-                        <th className="px-6 py-3">Score</th>
-                        <th className="px-6 py-3">Prob.</th>
-                        <th className="px-6 py-3">Sev.</th>
-                        <th className="px-6 py-3">Grau</th>
-                        <th className="px-6 py-3">Classificação</th>
-                        <th className="px-6 py-3">Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {filtered.map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-6 py-3 text-sm font-medium text-slate-800">{row.grupo_homogeneo}</td>
-                          <td className="px-6 py-3 text-sm text-slate-600">{row.descricao_perigo}</td>
-                          <td className="px-6 py-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-12 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                <div className="h-full rounded-full" style={{ width: `${row.score_medio}%`, backgroundColor: row.cor_hex }}></div>
-                              </div>
-                              <span className="text-xs font-bold" style={{ color: row.cor_hex }}>{row.score_medio}%</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-3 text-sm font-bold text-slate-700">{row.probabilidade}</td>
-                          <td className="px-6 py-3 text-sm font-bold text-slate-700">{row.severidade}</td>
-                          <td className="px-6 py-3 text-sm font-black" style={{ color: row.cor_hex }}>{row.grau_risco}</td>
-                          <td className="px-6 py-3">
-                            <span
-                              className="px-2 py-1 text-[10px] font-bold uppercase rounded-md text-white"
-                              style={{ backgroundColor: row.cor_hex }}
-                            >
-                              {row.classificacao_risco}
-                            </span>
-                          </td>
-                          <td className="px-6 py-3 text-xs text-slate-500 max-w-[200px] truncate" title={row.medidas_controle}>
-                            {row.medidas_controle}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {cards.length === 0 && (
+                  <div className="col-span-full flex items-center justify-center py-20 text-slate-400">
+                    <p className="text-sm">Nenhum dado de priorização disponível. Execute o questionário primeiro.</p>
+                  </div>
+                )}
               </div>
             </>
           )}

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { supabase } from '../lib/supabase';
 
 interface Setor {
   id: string;
@@ -9,8 +10,14 @@ interface FormData {
   nomeFantasia: string;
   cnpj: string;
   email: string;
+  senha: string;
   logo: File | null;
   setores: Setor[];
+}
+
+interface SetorCriado {
+  id: string;
+  nome: string;
 }
 
 export function NewClientPage({ onClose }: { onClose?: () => void }) {
@@ -18,71 +25,138 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
     nomeFantasia: '',
     cnpj: '',
     email: '',
+    senha: '',
     logo: null,
     setores: [],
   });
 
   const [novoSetor, setNovoSetor] = useState('');
   const [cadastroCompleto, setCadastroCompleto] = useState(false);
-  const [empresaId, setEmpresaId] = useState<string>('');
+  const [, setEmpresaId] = useState<string>('');
+  const [setoresCriados, setSetoresCriados] = useState<SetorCriado[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFormData(prev => ({
-        ...prev,
-        logo: e.target.files![0],
-      }));
+      setFormData(prev => ({ ...prev, logo: e.target.files![0] }));
     }
   };
 
   const adicionarSetor = () => {
     if (novoSetor.trim()) {
-      const novoSetorObj: Setor = {
-        id: `setor_${Date.now()}`,
-        nome: novoSetor,
-      };
       setFormData(prev => ({
         ...prev,
-        setores: [...prev.setores, novoSetorObj],
+        setores: [...prev.setores, { id: `temp_${Date.now()}`, nome: novoSetor.trim() }],
       }));
       setNovoSetor('');
     }
   };
 
   const removerSetor = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      setores: prev.setores.filter(s => s.id !== id),
-    }));
+    setFormData(prev => ({ ...prev, setores: prev.setores.filter(s => s.id !== id) }));
   };
 
-  const gerarQRCodeUrl = (setorId: string): string => {
-    const url = `https://app.mapa.com.br/survey?empresa_id=${empresaId}&setor_id=${setorId}`;
+  const surveyBaseUrl = window.location.origin;
+
+  const gerarQRCodeUrl = (departmentId: string): string => {
+    const url = `${surveyBaseUrl}/survey?setor=${departmentId}`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
   };
 
   const handleSalvar = async () => {
-    if (!formData.nomeFantasia || !formData.cnpj || !formData.email || formData.setores.length === 0) {
-      alert('Preencha todos os campos obrigatórios');
+    setError('');
+
+    if (!formData.nomeFantasia || !formData.cnpj || !formData.email || !formData.senha || formData.setores.length === 0) {
+      setError('Preencha todos os campos obrigatórios.');
       return;
     }
 
+    if (formData.senha.length < 6) {
+      setError('A senha deve ter no mínimo 6 caracteres.');
+      return;
+    }
+
+    setSaving(true);
+
     try {
-      // Simular criação de empresa no backend
-      const novaEmpresaId = `empresa_${Date.now()}`;
-      setEmpresaId(novaEmpresaId);
+      // 1. Criar empresa
+      const { data: empresa, error: errEmpresa } = await supabase
+        .from('empresas')
+        .insert({ nome: formData.nomeFantasia, cnpj: formData.cnpj })
+        .select('id')
+        .single();
+
+      if (errEmpresa) throw new Error(`Erro ao criar empresa: ${errEmpresa.message}`);
+
+      const newEmpresaId = empresa.id;
+      setEmpresaId(newEmpresaId);
+
+      // 2. Criar departamentos
+      const deptInserts = formData.setores.map(s => ({
+        empresa_id: newEmpresaId,
+        name: s.nome,
+      }));
+
+      const { data: depts, error: errDepts } = await supabase
+        .from('departments')
+        .insert(deptInserts)
+        .select('id, name');
+
+      if (errDepts) throw new Error(`Erro ao criar setores: ${errDepts.message}`);
+
+      setSetoresCriados((depts || []).map(d => ({ id: d.id, nome: d.name })));
+
+      // 3. Criar usuário gestor no Supabase Auth
+      // O trigger on_auth_user_created vai criar o profile automaticamente
+      const { error: errAuth } = await supabase.auth.admin.createUser({
+        email: formData.email,
+        password: formData.senha,
+        email_confirm: true,
+        user_metadata: {
+          role: 'gestor',
+          empresa_id: newEmpresaId,
+        },
+      });
+
+      // Se admin.createUser não funcionar (precisa service_role key),
+      // criar profile manualmente
+      if (errAuth) {
+        // Fallback: criar via signUp normal + inserir profile
+        const { data: signUpData, error: errSignUp } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.senha,
+          options: {
+            data: {
+              role: 'gestor',
+              empresa_id: newEmpresaId,
+            },
+          },
+        });
+
+        if (errSignUp) throw new Error(`Erro ao criar usuário: ${errSignUp.message}`);
+
+        // Se o trigger não criou o profile, criar manualmente
+        if (signUpData.user) {
+          await supabase.from('profiles').upsert({
+            id: signUpData.user.id,
+            email: formData.email,
+            role: 'gestor',
+            empresa_id: newEmpresaId,
+          });
+        }
+      }
+
       setCadastroCompleto(true);
-    } catch (error) {
-      console.error('Erro ao cadastrar empresa:', error);
-      alert('Erro ao cadastrar empresa');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erro ao cadastrar empresa.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -104,27 +178,43 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
                 <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Empresa Cadastrada com Sucesso!</h1>
                 <p className="text-slate-600 dark:text-slate-400 mt-2">QR Codes para Setores - {formData.nomeFantasia}</p>
               </div>
-              <button
-                onClick={handleCancelar}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2"
-              >
+              <button onClick={handleCancelar} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-2">
                 <span className="material-symbols-rounded text-2xl">close</span>
               </button>
             </div>
 
+            {/* Credenciais */}
+            <div className="mb-8 p-5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl">
+              <h3 className="font-bold text-green-800 dark:text-green-300 mb-2 flex items-center gap-2">
+                <span className="material-symbols-rounded">key</span>
+                Credenciais do Gestor
+              </h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-green-600 dark:text-green-400 font-semibold">E-mail:</span>
+                  <p className="text-green-900 dark:text-green-200 font-bold">{formData.email}</p>
+                </div>
+                <div>
+                  <span className="text-green-600 dark:text-green-400 font-semibold">Senha:</span>
+                  <p className="text-green-900 dark:text-green-200 font-bold">{formData.senha}</p>
+                </div>
+              </div>
+              <p className="text-xs text-green-600 dark:text-green-400 mt-3 italic">Envie essas credenciais ao gestor da empresa. Ele poderá trocar a senha após o primeiro login.</p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-              {formData.setores.map((setor) => (
+              {setoresCriados.map((setor) => (
                 <div key={setor.id} className="bg-slate-50 dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 flex flex-col items-center gap-4">
                   <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border-2 border-blue-200 dark:border-blue-600">
-                    <img 
-                      src={gerarQRCodeUrl(setor.id)} 
+                    <img
+                      src={gerarQRCodeUrl(setor.id)}
                       alt={`QR Code - ${setor.nome}`}
                       className="w-48 h-48"
                     />
                   </div>
                   <div className="text-center">
                     <h3 className="font-bold text-slate-900 dark:text-white text-lg">{setor.nome}</h3>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">ID: {setor.id}</p>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-mono">{setor.id}</p>
                   </div>
                   <a
                     href={gerarQRCodeUrl(setor.id)}
@@ -169,10 +259,7 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
               <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Cadastro de Nova Empresa</h1>
               <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">Sistema M.A.P.A. - Painel Super Admin</p>
             </div>
-            <button
-              onClick={handleCancelar}
-              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors p-1"
-            >
+            <button onClick={handleCancelar} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors p-1">
               <span className="material-symbols-rounded text-2xl">close</span>
             </button>
           </div>
@@ -181,6 +268,13 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-10 py-2">
           <div className="space-y-8">
+            {error && (
+              <div className="bg-red-50 text-red-600 p-4 rounded-xl text-sm font-medium border border-red-200 flex items-start gap-3">
+                <span className="material-symbols-rounded shrink-0">error</span>
+                <p>{error}</p>
+              </div>
+            )}
+
             {/* Nome Fantasia e CNPJ */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               <div className="flex flex-col gap-2.5">
@@ -207,17 +301,30 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
               </div>
             </div>
 
-            {/* Email */}
-            <div className="flex flex-col gap-2.5">
-              <label className="text-slate-700 dark:text-slate-300 text-sm font-bold ml-1">E-mail do Gestor Principal *</label>
-              <input
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleInputChange}
-                placeholder="exemplo@empresa.com.br"
-                className="w-full rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-500/30 h-12 px-4 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
-              />
+            {/* Email e Senha do Gestor */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="flex flex-col gap-2.5">
+                <label className="text-slate-700 dark:text-slate-300 text-sm font-bold ml-1">E-mail do Gestor *</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  placeholder="gestor@empresa.com.br"
+                  className="w-full rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-500/30 h-12 px-4 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                />
+              </div>
+              <div className="flex flex-col gap-2.5">
+                <label className="text-slate-700 dark:text-slate-300 text-sm font-bold ml-1">Senha Inicial *</label>
+                <input
+                  type="text"
+                  name="senha"
+                  value={formData.senha}
+                  onChange={handleInputChange}
+                  placeholder="Mínimo 6 caracteres"
+                  className="w-full rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-900 dark:text-slate-100 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-500/30 h-12 px-4 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
+                />
+              </div>
             </div>
 
             {/* Logo */}
@@ -225,9 +332,7 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
               <label className="text-slate-700 dark:text-slate-300 text-sm font-bold ml-1">Logotipo da Empresa</label>
               <div className="flex flex-col items-center gap-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 px-6 py-10 hover:bg-slate-50/50 dark:hover:bg-slate-800 hover:border-slate-400 dark:hover:border-slate-500 transition-all cursor-pointer group">
                 <div className="w-14 h-14 rounded-full bg-white dark:bg-slate-700 shadow-sm flex items-center justify-center border border-slate-100 dark:border-slate-600">
-                  <span className="material-symbols-rounded text-3xl text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                    cloud_upload
-                  </span>
+                  <span className="material-symbols-rounded text-3xl text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">cloud_upload</span>
                 </div>
                 <div className="text-center">
                   <p className="text-slate-700 dark:text-slate-300 text-base font-bold">
@@ -237,31 +342,26 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
                 </div>
                 <label className="mt-2 h-10 px-6 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 rounded-lg text-sm font-bold hover:border-slate-300 dark:hover:border-slate-500 hover:bg-slate-50 dark:hover:bg-slate-600 transition-all cursor-pointer inline-flex items-center justify-center">
                   Selecionar Arquivo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleLogoChange}
-                    className="hidden"
-                  />
+                  <input type="file" accept="image/*" onChange={handleLogoChange} className="hidden" />
                 </label>
               </div>
             </div>
 
-            {/* Setores Iniciais */}
+            {/* Setores */}
             <div className="flex flex-col gap-5 p-6 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
               <div className="flex flex-col gap-1">
                 <h3 className="text-slate-900 dark:text-white font-bold flex items-center gap-2">
                   <span className="material-symbols-rounded text-blue-600 dark:text-blue-400 text-xl">account_tree</span>
-                  Setores Iniciais *
+                  Setores / Departamentos *
                 </h3>
-                <p className="text-slate-500 dark:text-slate-400 text-xs">Adicione os departamentos para começar a organizar a estrutura.</p>
+                <p className="text-slate-500 dark:text-slate-400 text-xs">Cada setor terá seu próprio QR Code e link de questionário.</p>
               </div>
               <div className="flex gap-3">
                 <input
                   type="text"
                   value={novoSetor}
                   onChange={(e) => setNovoSetor(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && adicionarSetor()}
+                  onKeyDown={(e) => e.key === 'Enter' && adicionarSetor()}
                   placeholder="Ex: Logística, RH, Financeiro..."
                   className="flex-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-900 dark:text-slate-100 focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 dark:focus:ring-blue-500/30 h-11 px-4 text-sm transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
@@ -274,10 +374,7 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
               </div>
               <div className="flex flex-wrap gap-2.5">
                 {formData.setores.map(setor => (
-                  <div
-                    key={setor.id}
-                    className="flex items-center gap-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 pl-4 pr-2 py-2 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300 shadow-sm"
-                  >
+                  <div key={setor.id} className="flex items-center gap-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 pl-4 pr-2 py-2 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300 shadow-sm">
                     <span>{setor.nome}</span>
                     <button
                       onClick={() => removerSetor(setor.id)}
@@ -294,7 +391,7 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
             <div className="flex gap-4 items-start bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 p-5 rounded-xl">
               <span className="material-symbols-rounded text-blue-500 dark:text-blue-400 mt-0.5">info</span>
               <p className="text-blue-900 dark:text-blue-200/70 text-xs leading-relaxed font-medium">
-                Ao finalizar o cadastro, o sistema gerará automaticamente QR codes para cada setor que poderão ser impressos e distribuídos para os colaboradores responderem o questionário M.A.P.A.
+                Ao finalizar, o sistema criará a empresa, os setores e o usuário gestor automaticamente. O gestor poderá fazer login com as credenciais acima e ver apenas os dados da sua empresa.
               </p>
             </div>
           </div>
@@ -310,10 +407,17 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
           </button>
           <button
             onClick={handleSalvar}
-            className="px-12 h-14 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all shadow-lg shadow-blue-500/30 flex items-center gap-3 text-base"
+            disabled={saving}
+            className="px-12 h-14 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all shadow-lg shadow-blue-500/30 flex items-center gap-3 text-base disabled:opacity-70"
           >
-            <span>Salvar Empresa</span>
-            <span className="material-symbols-rounded">check_circle</span>
+            {saving ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            ) : (
+              <>
+                <span>Salvar Empresa</span>
+                <span className="material-symbols-rounded">check_circle</span>
+              </>
+            )}
           </button>
         </div>
       </div>

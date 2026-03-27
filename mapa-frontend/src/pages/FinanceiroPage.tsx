@@ -224,7 +224,7 @@ export function FinanceiroPage() {
                 <h2 className="text-lg font-bold">Transações Recentes</h2>
                 <select 
                   value={filterType}
-                  onChange={(e) => setFilterType(e.target.value as any)}
+                  onChange={(e) => setFilterType(e.target.value as typeof filterType)}
                   className="px-4 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">Todas as Transações</option>

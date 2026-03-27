@@ -36,16 +36,25 @@ export function Sidebar() {
 
   const displayName = user?.email?.split('@')[0] || 'Usuário';
   const roleLabel = user?.role === 'admin' ? 'Administrador' : 'Gestor';
+  const empresaNome = user?.empresa_nome || null;
 
   return (
     <aside className="w-72 flex flex-col sticky top-0 h-screen" style={{ backgroundColor: '#2D5A5A' }}>
-      {/* Logo */}
-      <div className="p-6 flex items-center gap-3 border-b border-white/10">
-        <img src="/logo-mapa.png" alt="M.A.P.A." className="w-11 h-11 rounded-xl object-cover" />
-        <div>
-          <h1 className="font-extrabold text-lg leading-tight text-white tracking-tight">M.A.P.A.</h1>
-          <p className="text-[10px] text-white/50 uppercase tracking-widest font-bold">Saúde Mental Ocupacional</p>
+      {/* Logo + Empresa */}
+      <div className="p-6 flex flex-col gap-4 border-b border-white/10">
+        <div className="flex items-center gap-3">
+          <img src="/logo-mapa.png" alt="M.A.P.A." className="w-11 h-11 rounded-xl object-cover" />
+          <div>
+            <h1 className="font-extrabold text-lg leading-tight text-white tracking-tight">M.A.P.A.</h1>
+            <p className="text-[10px] text-white/50 uppercase tracking-widest font-bold">Saúde Mental Ocupacional</p>
+          </div>
         </div>
+        {empresaNome && (
+          <div className="px-3 py-2 rounded-lg bg-white/10 border border-white/5">
+            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Empresa</p>
+            <p className="text-sm font-bold text-white truncate">{empresaNome}</p>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}

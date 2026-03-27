@@ -8,36 +8,70 @@ import { CompletionScreen } from '../components/CompletionScreen';
 import { WelcomeScreen } from '../components/WelcomeScreen';
 import { supabase } from '../lib/supabase';
 
-const QUESTIONS = [
-  'Sente que tem de trabalhar muito rápido?',
-  'Acha que o seu volume de trabalho é excessivo?',
-  'Sente-se emocionalmente esgotado(a) com o seu trabalho?',
-  'Sente que o seu trabalho tem um impacto negativo na sua saúde?',
-  'Sente falta de apoio da sua equipa ou chefia?',
-];
+interface Question {
+  id: string;
+  question_number: number;
+  question_text: string;
+  is_inverted: boolean;
+  category_id: string;
+  category_name: string;
+}
 
-type AppState = 'WELCOME' | 'QUESTIONNAIRE' | 'COMPLETED' | 'INVALID_SETOR';
+type AppState = 'LOADING' | 'WELCOME' | 'QUESTIONNAIRE' | 'COMPLETED' | 'INVALID_SETOR' | 'ERROR';
 
 export function SurveyPage() {
   const [searchParams] = useSearchParams();
   const setorId = Number(searchParams.get('setor'));
-  const [state, setState] = useState<AppState>('WELCOME');
+  const [state, setState] = useState<AppState>('LOADING');
+  const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<LikertValue[]>([]);
+  const [answers, setAnswers] = useState<Record<string, number>>({});
   const [direction, setDirection] = useState(1);
 
+  // Fetch questions from Supabase
   useEffect(() => {
     if (!setorId || isNaN(setorId)) {
       setState('INVALID_SETOR');
+      return;
     }
+
+    async function fetchQuestions() {
+      const { data, error } = await supabase
+        .from('questions')
+        .select('id, question_number, question_text, is_inverted, category_id, categories(name)')
+        .order('question_number', { ascending: true });
+
+      if (error || !data || data.length === 0) {
+        console.error('Erro ao carregar perguntas:', error);
+        setState('ERROR');
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const mapped: Question[] = data.map((q: any) => ({
+        id: q.id,
+        question_number: q.question_number,
+        question_text: q.question_text,
+        is_inverted: q.is_inverted,
+        category_id: q.category_id,
+        category_name: q.categories?.name ?? 'Geral',
+      }));
+
+      setQuestions(mapped);
+      setState('WELCOME');
+    }
+
+    fetchQuestions();
   }, [setorId]);
 
+  const currentQuestion = questions[currentIndex];
+
   const handleAnswer = async (value: LikertValue) => {
-    const newAnswers = [...answers, value];
+    const newAnswers = { ...answers, [currentQuestion.id]: value };
     setAnswers(newAnswers);
     setDirection(1);
 
-    if (currentIndex < QUESTIONS.length - 1) {
+    if (currentIndex < questions.length - 1) {
       setTimeout(() => setCurrentIndex(prev => prev + 1), 280);
     } else {
       // Submit to Supabase
@@ -52,6 +86,24 @@ export function SurveyPage() {
       setState('COMPLETED');
     }
   };
+
+  if (state === 'LOADING') {
+    return (
+      <div className="min-h-screen bg-background-light dark:bg-background-dark font-sans text-slate-900 dark:text-slate-100 flex flex-col items-center justify-center p-6">
+        <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-slate-500">Carregando questionário...</p>
+      </div>
+    );
+  }
+
+  if (state === 'ERROR') {
+    return (
+      <div className="min-h-screen bg-background-light dark:bg-background-dark font-sans text-slate-900 dark:text-slate-100 flex flex-col items-center justify-center p-6 text-center">
+        <p className="text-xl text-red-500 font-semibold mb-2">Erro ao carregar</p>
+        <p className="text-slate-500">Não foi possível carregar as perguntas. Tente novamente mais tarde.</p>
+      </div>
+    );
+  }
 
   if (state === 'INVALID_SETOR') {
     return (
@@ -72,15 +124,19 @@ export function SurveyPage() {
 
   return (
     <div className="bg-background-light dark:bg-background-dark font-sans text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-300">
-      <header className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex justify-between items-center bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50">
+      <header className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex justify-between items-center bg-white/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-white font-bold text-xl">M</div>
-          <span className="font-display font-semibold text-xl tracking-tight">M.A.P.A.</span>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xl" style={{ backgroundColor: '#009B9B' }}>M</div>
+          <span className="font-display font-semibold text-xl tracking-tight" style={{ color: '#2D5A5A' }}>M.A.P.A.</span>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-6 pt-32 pb-20">
-        <ProgressBar current={currentIndex + 1} total={QUESTIONS.length} />
+        <ProgressBar
+          current={currentIndex + 1}
+          total={questions.length}
+          categoryName={currentQuestion.category_name}
+        />
 
         <AnimatePresence mode="wait">
           <motion.div
@@ -92,10 +148,10 @@ export function SurveyPage() {
             className="flex flex-col items-center text-center w-full"
           >
             <div className="mb-12">
-              <h1 className="text-4xl md:text-5xl font-display font-semibold leading-tight max-w-3xl mx-auto">
-                {QUESTIONS[currentIndex]}
+              <h1 className="text-4xl md:text-5xl font-display font-semibold leading-tight max-w-3xl mx-auto" style={{ color: '#2D5A5A' }}>
+                {currentQuestion.question_text}
               </h1>
-              <p className="mt-4 text-slate-500 dark:text-slate-400 text-lg">Pense na sua semana de trabalho típica no último mês.</p>
+              <p className="mt-4 text-lg" style={{ color: '#404040' }}>Pense na sua semana de trabalho típica no último mês.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4 w-full max-w-5xl">
@@ -111,7 +167,7 @@ export function SurveyPage() {
           </motion.div>
         </AnimatePresence>
       </main>
-      
+
       <footer className="text-center pb-12 mt-12">
         <div className="max-w-md mx-auto px-6 py-4 bg-surface-light dark:bg-surface-dark rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
           <p className="text-sm text-slate-500 dark:text-slate-400 italic">"Não existem respostas certas ou erradas. Seu feedback sincero nos ajuda a construir um ambiente de trabalho mais saudável."</p>
