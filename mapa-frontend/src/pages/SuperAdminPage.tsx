@@ -12,11 +12,6 @@ interface EmpresaRow {
   data_cadastro: string;
 }
 
-interface DeptCount {
-  empresa_id: string;
-  count: number;
-}
-
 interface EmpresaView {
   id: string;
   nome: string;
@@ -42,6 +37,7 @@ export function SuperAdminPage() {
   const [alertas, setAlertas] = useState<{ setor: string; empresa: string; risco: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNovoClienteModal, setShowNovoClienteModal] = useState(false);
+  const [qrEmpresa, setQrEmpresa] = useState<{ nome: string; setores: { id: string; name: string }[] } | null>(null);
 
   useEffect(() => {
     if (user?.role !== 'admin') {
@@ -71,8 +67,10 @@ export function SuperAdminPage() {
 
       const colabCounts = new Map<string, number>();
       let totalC = 0;
-      (empDeptData || []).forEach((e: { departments: { empresa_id: string } | null }) => {
-        const empId = e.departments?.empresa_id;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (empDeptData || []).forEach((e: any) => {
+        const dept = Array.isArray(e.departments) ? e.departments[0] : e.departments;
+        const empId = dept?.empresa_id;
         if (empId) {
           colabCounts.set(empId, (colabCounts.get(empId) || 0) + 1);
           totalC++;
@@ -83,7 +81,8 @@ export function SuperAdminPage() {
       // 4. Buscar resumo de risco por empresa
       const { data: riscoData } = await supabase.from('vw_resumo_risco_departamento').select('empresa_id, risco_global');
       const riscoMap = new Map<string, string>();
-      (riscoData || []).forEach((r: { empresa_id: string; risco_global: string }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (riscoData || []).forEach((r: any) => {
         const current = riscoMap.get(r.empresa_id);
         const priority = ['Intolerável', 'Significativo', 'Moderado', 'Tolerável', 'Baixo'];
         if (!current || priority.indexOf(r.risco_global) < priority.indexOf(current)) {
@@ -98,8 +97,11 @@ export function SuperAdminPage() {
         .order('submitted_at', { ascending: false });
 
       const ultimaColetaMap = new Map<string, string>();
-      (subData || []).forEach((s: { submitted_at: string; employees: { departments: { empresa_id: string } | null } | null }) => {
-        const empId = s.employees?.departments?.empresa_id;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (subData || []).forEach((s: any) => {
+        const emp = Array.isArray(s.employees) ? s.employees[0] : s.employees;
+        const dept = emp ? (Array.isArray(emp.departments) ? emp.departments[0] : emp.departments) : null;
+        const empId = dept?.empresa_id;
         if (empId && !ultimaColetaMap.has(empId)) {
           ultimaColetaMap.set(empId, new Date(s.submitted_at).toLocaleDateString('pt-BR'));
         }
@@ -158,6 +160,20 @@ export function SuperAdminPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const abrirQRCodes = async (empresaId: string, empresaNome: string) => {
+    const { data } = await supabase
+      .from('departments')
+      .select('id, name')
+      .eq('empresa_id', empresaId)
+      .order('name');
+    setQrEmpresa({ nome: empresaNome, setores: data || [] });
+  };
+
+  const gerarQRCodeUrl = (departmentId: string): string => {
+    const url = `${window.location.origin}/survey?setor=${departmentId}`;
+    return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
   };
 
   const getRiskColor = (risco: string) => {
@@ -294,12 +310,22 @@ export function SuperAdminPage() {
                               {empresa.ultimaColeta || 'Sem coleta'}
                             </td>
                             <td className="px-6 py-4 text-right">
-                              <button
-                                onClick={() => navigate(`/overview`)}
-                                className="text-blue-600 font-bold text-sm hover:underline cursor-pointer"
-                              >
-                                Acessar Dashboard
-                              </button>
+                              <div className="flex items-center justify-end gap-3">
+                                <button
+                                  onClick={() => abrirQRCodes(empresa.id, empresa.nome)}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                  style={{ backgroundColor: '#009B9B', color: 'white' }}
+                                >
+                                  <span className="material-symbols-rounded text-sm">qr_code_2</span>
+                                  QR Codes
+                                </button>
+                                <button
+                                  onClick={() => navigate(`/overview`)}
+                                  className="text-blue-600 font-bold text-sm hover:underline cursor-pointer"
+                                >
+                                  Dashboard
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -377,6 +403,71 @@ export function SuperAdminPage() {
       {showNovoClienteModal && (
         <div className="absolute inset-0 z-50">
           <NewClientPage onClose={() => { setShowNovoClienteModal(false); carregarDados(); }} />
+        </div>
+      )}
+
+      {/* Modal QR Codes */}
+      {qrEmpresa && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-md z-50 flex items-center justify-center p-6">
+          <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-8 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">QR Codes - {qrEmpresa.nome}</h2>
+                <p className="text-sm text-slate-500 mt-1">{qrEmpresa.setores.length} setores</p>
+              </div>
+              <button onClick={() => setQrEmpresa(null)} className="text-slate-400 hover:text-slate-600 p-2 cursor-pointer">
+                <span className="material-symbols-rounded text-2xl">close</span>
+              </button>
+            </div>
+
+            <div className="p-8 overflow-y-auto flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {qrEmpresa.setores.map((setor) => (
+                  <div key={setor.id} className="bg-slate-50 dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 flex flex-col items-center gap-4">
+                    <div className="bg-white dark:bg-slate-900 p-4 rounded-lg border-2 border-blue-200 dark:border-blue-600">
+                      <img
+                        src={gerarQRCodeUrl(setor.id)}
+                        alt={`QR Code - ${setor.name}`}
+                        className="w-40 h-40"
+                      />
+                    </div>
+                    <div className="text-center">
+                      <h3 className="font-bold text-slate-900 dark:text-white text-lg">{setor.name}</h3>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 font-mono">{setor.id}</p>
+                    </div>
+                    <a
+                      href={gerarQRCodeUrl(setor.id)}
+                      download={`qrcode-${setor.name}.png`}
+                      className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition-all text-sm flex items-center justify-center gap-2"
+                    >
+                      <span className="material-symbols-rounded text-sm">download</span>
+                      Baixar QR Code
+                    </a>
+                  </div>
+                ))}
+              </div>
+
+              {qrEmpresa.setores.length === 0 && (
+                <p className="text-center text-slate-400 py-12">Nenhum setor cadastrado para esta empresa.</p>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
+              <button
+                onClick={() => setQrEmpresa(null)}
+                className="px-6 py-2 text-slate-600 font-bold hover:text-slate-900 transition-colors cursor-pointer"
+              >
+                Fechar
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <span className="material-symbols-rounded text-sm">print</span>
+                Imprimir Todos
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
