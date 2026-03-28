@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../lib/supabase';
 
 interface Setor {
   id: string;
@@ -85,19 +85,29 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
     setSaving(true);
 
     try {
+      // Verify admin session exists before proceeding
+      const { data: { session: adminSession } } = await supabase.auth.getSession();
+      if (!adminSession) {
+        throw new Error('Sessão expirada. Faça login novamente.');
+      }
+      console.log('Sessão admin verificada, access_token presente:', !!adminSession.access_token);
+
       // 1. Criar empresa
+      console.log('Criando empresa...');
       const { data: empresa, error: errEmpresa } = await supabase
         .from('empresas')
-        .insert({ nome: formData.nomeFantasia, cnpj: formData.cnpj })
+        .insert({ nome_fantasia: formData.nomeFantasia, cnpj: formData.cnpj })
         .select('id')
         .single();
 
       if (errEmpresa) throw new Error(`Erro ao criar empresa: ${errEmpresa.message}`);
+      console.log('Empresa criada:', empresa.id);
 
       const newEmpresaId = empresa.id;
       setEmpresaId(newEmpresaId);
 
       // 2. Criar departamentos
+      console.log('Criando departamentos...');
       const deptInserts = formData.setores.map(s => ({
         empresa_id: newEmpresaId,
         name: s.nome,
@@ -109,51 +119,49 @@ export function NewClientPage({ onClose }: { onClose?: () => void }) {
         .select('id, name');
 
       if (errDepts) throw new Error(`Erro ao criar setores: ${errDepts.message}`);
+      console.log('Departamentos criados:', depts?.length);
 
       setSetoresCriados((depts || []).map(d => ({ id: d.id, nome: d.name })));
 
-      // 3. Criar usuário gestor no Supabase Auth
-      // O trigger on_auth_user_created vai criar o profile automaticamente
-      const { error: errAuth } = await supabase.auth.admin.createUser({
-        email: formData.email,
-        password: formData.senha,
-        email_confirm: true,
-        user_metadata: {
-          role: 'gestor',
-          empresa_id: newEmpresaId,
+      // 3. Criar usuário gestor via fetch direto (evita signUp que substitui a sessão)
+      console.log('Criando gestor...');
+      const signUpRes = await fetch(`${supabaseUrl}/auth/v1/signup`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey,
         },
-      });
-
-      // Se admin.createUser não funcionar (precisa service_role key),
-      // criar profile manualmente
-      if (errAuth) {
-        // Fallback: criar via signUp normal + inserir profile
-        const { data: signUpData, error: errSignUp } = await supabase.auth.signUp({
+        body: JSON.stringify({
           email: formData.email,
           password: formData.senha,
-          options: {
-            data: {
-              role: 'gestor',
-              empresa_id: newEmpresaId,
-            },
-          },
-        });
-
-        if (errSignUp) throw new Error(`Erro ao criar usuário: ${errSignUp.message}`);
-
-        // Se o trigger não criou o profile, criar manualmente
-        if (signUpData.user) {
-          await supabase.from('profiles').upsert({
-            id: signUpData.user.id,
-            email: formData.email,
+          data: {
             role: 'gestor',
             empresa_id: newEmpresaId,
-          });
-        }
+          },
+        }),
+      });
+
+      const signUpResult = await signUpRes.json();
+      if (signUpResult.error || signUpResult.code) {
+        throw new Error(`Erro ao criar usuário: ${signUpResult.error?.message || signUpResult.msg || 'Erro desconhecido'}`);
+      }
+      console.log('Gestor criado:', signUpResult.id);
+
+      // Criar/atualizar profile manualmente
+      if (signUpResult.id) {
+        console.log('Criando profile...');
+        await supabase.from('profiles').upsert({
+          id: signUpResult.id,
+          email: formData.email,
+          role: 'gestor',
+          empresa_id: newEmpresaId,
+        });
       }
 
+      console.log('Cadastro completo!');
       setCadastroCompleto(true);
     } catch (err: unknown) {
+      console.error('Erro no cadastro:', err);
       setError(err instanceof Error ? err.message : 'Erro ao cadastrar empresa.');
     } finally {
       setSaving(false);

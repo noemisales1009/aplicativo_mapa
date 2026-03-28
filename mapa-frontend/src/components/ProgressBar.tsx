@@ -22,7 +22,7 @@ export function ProgressBar({ current, total, categoryName }: ProgressBarProps) 
           <span className="font-bold text-lg" style={{ color: '#009B9B' }}>{percentage}%</span>
         </div>
       </div>
-      <div className="w-full h-3 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+      <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden">
         <div
           className="h-full transition-all duration-700 ease-out rounded-full"
           style={{ width: `${percentage}%`, backgroundColor: '#009B9B', boxShadow: '0 0 15px rgba(0, 155, 155, 0.3)' }}

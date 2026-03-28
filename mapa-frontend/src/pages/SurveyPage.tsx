@@ -123,8 +123,8 @@ export function SurveyPage() {
   }
 
   return (
-    <div className="bg-background-light dark:bg-background-dark font-sans text-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-300">
-      <header className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex justify-between items-center bg-white/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-slate-200/50 dark:border-slate-800/50">
+    <div className="bg-white font-sans text-slate-900 min-h-screen transition-colors duration-300">
+      <header className="fixed top-0 left-0 right-0 z-50 px-6 py-4 flex justify-between items-center bg-white/80 backdrop-blur-md border-b border-slate-200/50">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-bold text-xl" style={{ backgroundColor: '#009B9B' }}>M</div>
           <span className="font-display font-semibold text-xl tracking-tight" style={{ color: '#2D5A5A' }}>M.A.P.A.</span>
@@ -169,11 +169,11 @@ export function SurveyPage() {
       </main>
 
       <footer className="text-center pb-12 mt-12">
-        <div className="max-w-md mx-auto px-6 py-4 bg-surface-light dark:bg-surface-dark rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-          <p className="text-sm text-slate-500 dark:text-slate-400 italic">"Não existem respostas certas ou erradas. Seu feedback sincero nos ajuda a construir um ambiente de trabalho mais saudável."</p>
+        <div className="max-w-md mx-auto px-6 py-4 bg-slate-50 rounded-2xl border border-slate-100 shadow-sm">
+          <p className="text-sm text-slate-500 italic">"Não existem respostas certas ou erradas. Seu feedback sincero nos ajuda a construir um ambiente de trabalho mais saudável."</p>
         </div>
         <div className="mt-20 opacity-20 hover:opacity-100 transition-opacity duration-500 pointer-events-none select-none">
-          <h2 className="text-[10vw] font-display font-bold tracking-tighter leading-none uppercase m-0 p-0 text-slate-200 dark:text-slate-800">
+          <h2 className="text-[10vw] font-display font-bold tracking-tighter leading-none uppercase m-0 p-0 text-slate-200">
             Questionário M.A.P.A.
           </h2>
         </div>

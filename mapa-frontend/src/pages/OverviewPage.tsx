@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Sidebar } from '../components/Sidebar';
 import { supabase } from '../lib/supabase';
 import { useEmpresaFilter } from '../lib/useEmpresaFilter';
@@ -29,6 +30,7 @@ export function OverviewPage() {
   const [topRiscos, setTopRiscos] = useState<TopRisco[]>([]);
   const [loading, setLoading] = useState(true);
   const { empresaId, shouldFilter } = useEmpresaFilter();
+  const navigate = useNavigate();
 
   useEffect(() => {
     async function load() {
@@ -115,7 +117,7 @@ export function OverviewPage() {
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
               {/* Índice Geral de Risco */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col hover:shadow-md transition-shadow">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 flex flex-col hover:shadow-lg transition-shadow">
                 <div className="flex justify-between items-start mb-6">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Índice Geral de Risco</span>
                   <div className="p-2 rounded-lg" style={{ backgroundColor: riskLabelColor + '15', color: riskLabelColor }}>
@@ -132,7 +134,7 @@ export function OverviewPage() {
               </div>
 
               {/* Adesão da Pesquisa */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col hover:shadow-md transition-shadow">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 flex flex-col hover:shadow-lg transition-shadow">
                 <div className="flex justify-between items-start mb-6">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Adesão da Pesquisa</span>
                   <div className="p-2 rounded-lg" style={{ backgroundColor: '#136dec15', color: '#136dec' }}>
@@ -146,7 +148,7 @@ export function OverviewPage() {
               </div>
 
               {/* Setores Críticos */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col hover:shadow-md transition-shadow">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 flex flex-col hover:shadow-lg transition-shadow">
                 <div className="flex justify-between items-start mb-6">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Setores Críticos</span>
                   <div className="p-2 rounded-lg bg-red-500/10 text-red-500">
@@ -168,7 +170,7 @@ export function OverviewPage() {
               </div>
 
               {/* Alertas Ativos */}
-              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col hover:shadow-md transition-shadow">
+              <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 flex flex-col hover:shadow-lg transition-shadow">
                 <div className="flex justify-between items-start mb-6">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Alertas Ativos</span>
                   <div className="p-2 rounded-lg bg-red-500/10 text-red-500">
@@ -190,7 +192,7 @@ export function OverviewPage() {
             {/* Chart + Fatores */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* Evolução Chart */}
-              <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800">
+              <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-md border border-slate-200 dark:border-slate-800">
                 <div className="flex flex-wrap justify-between items-end gap-4 mb-10">
                   <div>
                     <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">Evolução do Bem-estar Mental</h4>
@@ -282,7 +284,7 @@ export function OverviewPage() {
                     </>
                   )}
                 </div>
-                <button className="mt-8 w-full py-3 text-xs font-bold text-blue-600 border-2 border-blue-600/10 rounded-xl hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all uppercase tracking-widest">
+                <button onClick={() => navigate('/dashboard')} className="mt-8 w-full py-3 text-xs font-bold text-blue-600 border-2 border-blue-600/20 rounded-xl hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all uppercase tracking-widest cursor-pointer">
                   Explorar Todas Dimensões
                 </button>
               </div>
@@ -295,7 +297,7 @@ export function OverviewPage() {
                   <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">Fila de Atendimento</h4>
                   <p className="text-sm text-slate-500 font-medium">Colaboradores em zona de risco</p>
                 </div>
-                <button className="px-4 py-2 text-sm font-bold text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-1 transition-colors">
+                <button onClick={() => navigate('/dashboard')} className="px-4 py-2 text-sm font-bold text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-1 transition-colors cursor-pointer">
                   Gerenciar Alertas
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                 </button>
