@@ -19,9 +19,17 @@ interface Question {
 
 type AppState = 'LOADING' | 'WELCOME' | 'QUESTIONNAIRE' | 'COMPLETED' | 'INVALID_SETOR' | 'ERROR';
 
+function getSetorId(searchParams: URLSearchParams): string | null {
+  const fromRouter = searchParams.get('setor');
+  if (fromRouter) return fromRouter;
+  // Fallback: read directly from URL (fixes Hostinger rewrite issues)
+  const urlParams = new URLSearchParams(window.location.search);
+  return urlParams.get('setor');
+}
+
 export function SurveyPage() {
   const [searchParams] = useSearchParams();
-  const setorId = Number(searchParams.get('setor'));
+  const setorId = getSetorId(searchParams);
   const [state, setState] = useState<AppState>('LOADING');
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -30,7 +38,7 @@ export function SurveyPage() {
 
   // Fetch questions from Supabase
   useEffect(() => {
-    if (!setorId || isNaN(setorId)) {
+    if (!setorId || setorId.trim() === '') {
       setState('INVALID_SETOR');
       return;
     }
