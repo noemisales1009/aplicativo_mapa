@@ -347,6 +347,24 @@ SELECT empresa_id, grupo_homogeneo, qtd_funcionarios, COUNT(*) AS total_categori
     WHEN COUNT(*) FILTER (WHERE classificacao_risco='Tolerável')>0 THEN 'Tolerável' ELSE 'Baixo' END AS risco_global
 FROM vw_pgr_completo GROUP BY empresa_id, grupo_homogeneo, qtd_funcionarios;
 
+-- View: Evolução mensal do bem-estar (para gráfico temporal)
+CREATE OR REPLACE VIEW vw_evolucao_mensal AS
+SELECT
+  d.empresa_id,
+  DATE_TRUNC('month', s.submitted_at)::date AS mes,
+  COUNT(DISTINCT s.id) AS total_submissions,
+  COUNT(DISTINCT s.employee_id) AS total_respondentes,
+  ROUND(AVG(CASE WHEN q.is_inverted=false
+    THEN ((a.score-1)::NUMERIC/4)*100
+    ELSE ((5-a.score)::NUMERIC/4)*100 END), 1) AS score_medio
+FROM answers a
+  JOIN submissions s ON a.submission_id = s.id
+  JOIN employees e ON s.employee_id = e.id
+  JOIN departments d ON e.department_id = d.id
+  JOIN questions q ON a.question_id = q.id
+GROUP BY d.empresa_id, DATE_TRUNC('month', s.submitted_at)
+ORDER BY mes ASC;
+
 
 -- ██████████████████████████████████████████████
 -- PARTE 5: EMPRESAS E SETORES DEMO

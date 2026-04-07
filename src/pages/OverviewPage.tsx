@@ -25,9 +25,16 @@ interface TopRisco {
   semaforo_cor: string;
 }
 
+interface EvolucaoMensal {
+  mes: string;
+  score_medio: number;
+  total_respondentes: number;
+}
+
 export function OverviewPage() {
   const [resumo, setResumo] = useState<ResumoSetor[]>([]);
   const [topRiscos, setTopRiscos] = useState<TopRisco[]>([]);
+  const [evolucao, setEvolucao] = useState<EvolucaoMensal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -41,14 +48,18 @@ export function OverviewPage() {
         let topQuery = supabase.from('vw_media_por_categoria_setor')
           .select('empresa_id, department_name, category_name, score_medio, semaforo_cor')
           .order('score_medio', { ascending: false }).limit(5);
+        let evolucaoQuery = supabase.from('vw_evolucao_mensal')
+          .select('mes, score_medio, total_respondentes')
+          .order('mes', { ascending: true }).limit(12);
 
         // Gestor: filtra por empresa_id. Admin: vê tudo.
         if (shouldFilter && empresaId) {
           resumoQuery = resumoQuery.eq('empresa_id', empresaId);
           topQuery = topQuery.eq('empresa_id', empresaId);
+          evolucaoQuery = evolucaoQuery.eq('empresa_id', empresaId);
         }
 
-        const [resResumo, resTop] = await Promise.all([resumoQuery, topQuery]);
+        const [resResumo, resTop, resEvolucao] = await Promise.all([resumoQuery, topQuery, evolucaoQuery]);
         if (resResumo.error) {
           console.error('Erro ao carregar resumo:', resResumo.error);
           setError('Não foi possível carregar os dados.');
@@ -59,6 +70,9 @@ export function OverviewPage() {
           console.error('Erro ao carregar top riscos:', resTop.error);
         } else if (resTop.data) {
           setTopRiscos(resTop.data);
+        }
+        if (resEvolucao.data) {
+          setEvolucao(resEvolucao.data);
         }
       } catch (err) {
         console.error('Erro inesperado:', err);
@@ -220,40 +234,83 @@ export function OverviewPage() {
 
             {/* Chart + Fatores */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Evolução Chart */}
+              {/* Evolução Chart - Dados reais do Supabase */}
               <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-md border border-slate-200 dark:border-slate-800">
                 <div className="flex flex-wrap justify-between items-end gap-4 mb-10">
                   <div>
                     <h4 className="text-xl font-extrabold text-slate-900 dark:text-white">Evolução do Bem-estar Mental</h4>
-                    <p className="text-sm text-slate-500 font-medium">Histórico semestral consolidado</p>
+                    <p className="text-sm text-slate-500 font-medium">
+                      {evolucao.length > 0
+                        ? `Últimos ${evolucao.length} ${evolucao.length === 1 ? 'mês' : 'meses'} de coleta`
+                        : 'Aguardando dados de coleta'}
+                    </p>
                   </div>
-                  <div className="flex gap-2">
-                    <span className="px-3 py-1.5 bg-green-500/10 text-green-600 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                      +8.2% melhoria
-                    </span>
-                  </div>
+                  {evolucao.length >= 2 && (() => {
+                    const first = evolucao[0].score_medio;
+                    const last = evolucao[evolucao.length - 1].score_medio;
+                    const diff = last - first;
+                    const isWorse = diff > 0;
+                    return (
+                      <span className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${isWorse ? 'bg-red-500/10 text-red-600' : 'bg-green-500/10 text-green-600'}`}>
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d={isWorse ? "M13 17V9m0 0l-4 4m4-4l4 4" : "M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"} />
+                        </svg>
+                        {isWorse ? '+' : '-'}{Math.abs(diff).toFixed(1)}% {isWorse ? 'piora' : 'melhoria'}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="relative h-72 w-full">
-                  <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox="0 0 1000 200">
-                    <defs>
-                      <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#136dec" stopOpacity="0.15" />
-                        <stop offset="100%" stopColor="#136dec" stopOpacity="0" />
-                      </linearGradient>
-                    </defs>
-                    <path d="M0,180 Q100,165 200,140 T400,125 T600,85 T800,95 T1000,45 V200 H0 Z" fill="url(#chartGradient)" />
-                    <path d="M0,180 Q100,165 200,140 T400,125 T600,85 T800,95 T1000,45" fill="none" stroke="#136dec" strokeLinecap="round" strokeWidth="3" />
-                    <circle cx="0" cy="180" fill="white" r="5" stroke="#136dec" strokeWidth="2" />
-                    <circle cx="200" cy="140" fill="white" r="5" stroke="#136dec" strokeWidth="2" />
-                    <circle cx="400" cy="125" fill="white" r="5" stroke="#136dec" strokeWidth="2" />
-                    <circle cx="600" cy="85" fill="white" r="5" stroke="#136dec" strokeWidth="2" />
-                    <circle cx="800" cy="95" fill="white" r="5" stroke="#136dec" strokeWidth="2" />
-                    <circle cx="1000" cy="45" fill="white" r="5" stroke="#136dec" strokeWidth="2" />
-                  </svg>
-                  <div className="flex justify-between mt-8 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
-                    <span>Jan</span><span>Fev</span><span>Mar</span><span>Abr</span><span>Mai</span><span>Jun</span>
-                  </div>
+                  {evolucao.length > 0 ? (() => {
+                    const padding = 20;
+                    const width = 1000;
+                    const height = 200;
+                    const maxScore = Math.max(...evolucao.map(e => e.score_medio), 100);
+                    const minScore = Math.min(...evolucao.map(e => e.score_medio), 0);
+                    const range = maxScore - minScore || 1;
+                    const points = evolucao.map((e, i) => ({
+                      x: evolucao.length === 1 ? width / 2 : (i / (evolucao.length - 1)) * width,
+                      y: padding + ((e.score_medio - minScore) / range) * (height - padding * 2),
+                    }));
+                    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+                    const areaPath = `${linePath} V${height} H${points[0].x} Z`;
+                    const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
+                    return (
+                      <>
+                        <svg className="w-full h-full overflow-visible" preserveAspectRatio="none" viewBox={`0 0 ${width} ${height}`}>
+                          <defs>
+                            <linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1">
+                              <stop offset="0%" stopColor="#136dec" stopOpacity="0.15" />
+                              <stop offset="100%" stopColor="#136dec" stopOpacity="0" />
+                            </linearGradient>
+                          </defs>
+                          <path d={areaPath} fill="url(#chartGradient)" />
+                          <path d={linePath} fill="none" stroke="#136dec" strokeLinecap="round" strokeWidth="3" />
+                          {points.map((p, i) => (
+                            <g key={i}>
+                              <circle cx={p.x} cy={p.y} fill="white" r="5" stroke="#136dec" strokeWidth="2" />
+                              <text x={p.x} y={p.y - 12} textAnchor="middle" fill="#64748b" fontSize="11" fontWeight="bold">
+                                {evolucao[i].score_medio.toFixed(0)}%
+                              </text>
+                            </g>
+                          ))}
+                        </svg>
+                        <div className="flex justify-between mt-8 text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">
+                          {evolucao.map((e, i) => {
+                            const d = new Date(e.mes);
+                            return <span key={i}>{meses[d.getMonth()]} {d.getFullYear().toString().slice(2)}</span>;
+                          })}
+                        </div>
+                      </>
+                    );
+                  })() : (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <svg className="w-16 h-16 text-slate-200 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+                      <p className="text-sm text-slate-400 font-medium">Sem dados de evolução</p>
+                      <p className="text-xs text-slate-300 mt-1">O gráfico será preenchido conforme as coletas forem realizadas</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
