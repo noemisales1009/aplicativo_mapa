@@ -30,6 +30,7 @@ export function OverviewPage() {
   const [topRiscos, setTopRiscos] = useState<TopRisco[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const { empresaId, shouldFilter } = useEmpresaFilter();
   const navigate = useNavigate();
 
@@ -77,10 +78,11 @@ export function OverviewPage() {
   const weightedScore = resumo.reduce((a, r) => {
     return a + r.qtd_intoleravel * 100 + r.qtd_significativo * 80 + r.qtd_moderado * 60 + r.qtd_toleravel * 40 + r.qtd_baixo * 20;
   }, 0);
+  // Thresholds COPSOQ II: >= 66.7 Alto, >= 33.4 Moderado, < 33.4 Baixo
   const riskIndex = totalCats > 0 ? Math.round(weightedScore / totalCats) : 0;
-  const riskLabel = riskIndex > 66 ? 'Risco Alto' : riskIndex > 33 ? 'Risco Moderado-Alto' : 'Risco Baixo';
-  const riskLabelColor = riskIndex > 66 ? '#dc2626' : riskIndex > 33 ? '#d97706' : '#16a34a';
-  const riskBarColor = riskIndex > 66 ? '#dc2626' : riskIndex > 33 ? '#d97706' : '#16a34a';
+  const riskLabel = riskIndex >= 67 ? 'Risco Alto' : riskIndex >= 34 ? 'Risco Moderado-Alto' : 'Risco Baixo';
+  const riskLabelColor = riskIndex >= 67 ? '#dc2626' : riskIndex >= 34 ? '#d97706' : '#16a34a';
+  const riskBarColor = riskIndex >= 67 ? '#dc2626' : riskIndex >= 34 ? '#d97706' : '#16a34a';
 
   const getRiskStyle = (score: number) => {
     if (score >= 66.7) return { color: '#dc2626', bg: 'bg-red-50', label: 'Muito Alto', barColor: '#dc2626', shadowColor: 'rgba(220,38,38,0.3)' };
@@ -109,17 +111,20 @@ export function OverviewPage() {
               </svg>
               <input
                 className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all outline-none text-slate-900 dark:text-white"
-                placeholder="Buscar métricas ou setores..."
+                placeholder="Buscar setores..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 type="text"
               />
             </div>
-            <button className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 relative transition-all">
+            <button
+              onClick={() => { setLoading(true); setError(null); window.location.reload(); }}
+              title="Atualizar dados"
+              className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 relative transition-all"
+            >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              {alertas > 0 && (
-                <span className="absolute top-2 right-2 size-2 bg-red-500 rounded-full ring-2 ring-white"></span>
-              )}
             </button>
           </div>
         </header>
@@ -313,6 +318,7 @@ export function OverviewPage() {
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {resumo
                       .filter(r => r.risco_global === 'Intolerável' || r.risco_global === 'Significativo')
+                      .filter(r => !searchTerm || r.grupo_homogeneo.toLowerCase().includes(searchTerm.toLowerCase()))
                       .sort((a, b) => b.qtd_intoleravel - a.qtd_intoleravel)
                       .map((r) => {
                         const isIntol = r.risco_global === 'Intolerável';
@@ -354,7 +360,7 @@ export function OverviewPage() {
                           </tr>
                         );
                       })}
-                    {resumo.filter(r => r.risco_global === 'Intolerável' || r.risco_global === 'Significativo').length === 0 && (
+                    {resumo.filter(r => r.risco_global === 'Intolerável' || r.risco_global === 'Significativo').filter(r => !searchTerm || r.grupo_homogeneo.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
                       <tr>
                         <td colSpan={5} className="px-8 py-12 text-center text-slate-400 text-sm">
                           Nenhum setor em zona de risco crítico

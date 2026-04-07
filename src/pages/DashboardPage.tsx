@@ -77,19 +77,21 @@ export function DashboardPage() {
     const grauValues = rows.map(r => r.grau_risco);
     const maxGrau = grauValues.length > 0 ? Math.max(...grauValues) : 0;
     const avgScore = rows.length > 0 ? rows.reduce((a, r) => a + r.score_medio, 0) / rows.length : 0;
-    const scoreDisplay = (avgScore / 25).toFixed(2); // Converter 0-100 para escala ~0-4
 
+    // Classificação de risco usando score_medio (0-100, protocolo COPSOQ II)
+    // >= 66.7 = Alto (vermelho), >= 33.4 = Moderado (amarelo), < 33.4 = Baixo (verde)
+    // maxGrau (1-25 da matriz PGR) é usado como critério secundário
     let riskLevel: 'high' | 'moderate' | 'low';
     let riskLabel: string;
-    if (maxGrau >= 16) {
+    if (avgScore >= 66.7 || maxGrau >= 16) {
       riskLevel = 'high';
-      riskLabel = `Risco Alto (${scoreDisplay})`;
-    } else if (maxGrau >= 8) {
+      riskLabel = `Risco Alto (${avgScore.toFixed(0)}%)`;
+    } else if (avgScore >= 33.4 || maxGrau >= 8) {
       riskLevel = 'moderate';
-      riskLabel = `Moderado (${scoreDisplay})`;
+      riskLabel = `Moderado (${avgScore.toFixed(0)}%)`;
     } else {
       riskLevel = 'low';
-      riskLabel = `Baixo (${scoreDisplay})`;
+      riskLabel = `Baixo (${avgScore.toFixed(0)}%)`;
     }
 
     // Top 2 recomendações do setor (maiores grau_risco)
