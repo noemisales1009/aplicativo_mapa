@@ -38,21 +38,31 @@ export async function createDepartments(empresaId: string, nomes: string[]) {
   return data || [];
 }
 
+// Reescrita: a tabela `employees` foi removida. Cada respondent agora
+// representa um colaborador anonimo que respondeu o questionario.
+// SuperAdminPage usa isso para contar quantas pessoas responderam por empresa.
 export async function fetchEmployeesByEmpresa() {
   const { data, error } = await supabase
-    .from('employees')
+    .from('respondents')
     .select('id, department_id, departments(empresa_id)');
   if (error) throw error;
   return data || [];
 }
 
+// Reescrita: a tabela `submissions` foi removida. Cada respondent
+// e uma "submissao". Reaproveitamos `created_at` como `submitted_at`
+// e preservamos o shape aninhado que a SuperAdminPage consome.
 export async function fetchSubmissionsWithEmpresa() {
   const { data, error } = await supabase
-    .from('submissions')
-    .select('submitted_at, employees(department_id, departments(empresa_id))')
-    .order('submitted_at', { ascending: false });
+    .from('respondents')
+    .select('created_at, department_id, departments(empresa_id)')
+    .order('created_at', { ascending: false });
   if (error) throw error;
-  return data || [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data || []).map((r: any) => ({
+    submitted_at: r.created_at,
+    employees: { department_id: r.department_id, departments: r.departments },
+  }));
 }
 
 export async function fetchAlertasCriticos() {

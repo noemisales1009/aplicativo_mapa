@@ -106,7 +106,7 @@ export function SurveyPage() {
         <ProgressBar
           current={currentIndex + 1}
           total={questions.length}
-          categoryName={currentQuestion.category_name}
+          categoryName={currentQuestion.subscale}
         />
 
         <AnimatePresence mode="wait">

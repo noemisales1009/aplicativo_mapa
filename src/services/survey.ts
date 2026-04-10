@@ -1,38 +1,32 @@
 import { supabase } from '../lib/supabase';
 
 export interface Question {
-  id: string;
-  question_number: number;
+  id: number;
   question_text: string;
+  subscale: string;
   is_inverted: boolean;
-  category_id: string;
-  category_name: string;
 }
 
-export async function fetchQuestions() {
+export async function fetchQuestions(): Promise<Question[]> {
   const { data, error } = await supabase
     .from('questions')
-    .select('id, question_number, question_text, is_inverted, category_id, categories(name)')
-    .order('question_number', { ascending: true });
+    .select('id, question_text, subscale, is_inverted')
+    .order('id', { ascending: true });
 
   if (error) throw error;
   if (!data || data.length === 0) throw new Error('Nenhuma pergunta encontrada');
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return data.map((q: any) => ({
-    id: q.id,
-    question_number: q.question_number,
-    question_text: q.question_text,
-    is_inverted: q.is_inverted,
-    category_id: q.category_id,
-    category_name: q.categories?.name ?? 'Geral',
-  })) as Question[];
+  return data as Question[];
 }
 
-export async function submitSurveyResponse(setorId: string, answers: Record<string, number>) {
-  const { error } = await supabase.from('respostas_brutas').insert({
-    setor_id: setorId,
-    respostas_json: answers,
+// setorId continua sendo o UUID de departments (o QR code nao muda)
+export async function submitSurveyResponse(
+  setorId: string,
+  answers: Record<string | number, number>
+) {
+  const { error } = await supabase.rpc('insert_survey_response', {
+    p_department_id: setorId,
+    p_answers:       answers,
   });
   if (error) throw error;
 }
