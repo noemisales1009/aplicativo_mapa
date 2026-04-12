@@ -13,6 +13,8 @@ import { SetoresPage } from './pages/SetoresPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { FinanceiroPage } from './pages/FinanceiroPage';
 import { NewClientPage } from './pages/NewClientPage';
+import { ValidacaoPage } from './pages/ValidacaoPage';
+import { ValidacaoFormPage } from './pages/ValidacaoFormPage';
 
 function App() {
   return (
@@ -78,6 +80,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <ReportsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/validacao"
+            element={
+              <ProtectedRoute>
+                <ValidacaoPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/validacao/novo"
+            element={
+              <ProtectedRoute>
+                <ValidacaoFormPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/validacao/:id"
+            element={
+              <ProtectedRoute>
+                <ValidacaoFormPage />
               </ProtectedRoute>
             }
           />
