@@ -37,9 +37,9 @@ export function Sidebar() {
     return () => { document.body.style.overflow = ''; };
   }, [isOpen]);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
   };
 
   const menuItems = [
